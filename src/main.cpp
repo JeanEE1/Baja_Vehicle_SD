@@ -89,10 +89,10 @@ double getPitch(){
     return referenceAngle;
   }else if(a.acceleration.z < 0 && referenceAngle > 0){// Z < 0 is upside down
     // for the pitch tilt from 90 to 180 degree
-    return referenceAngle + (90-referenceAngle)*2;
+    return 180 - referenceAngle;
   }else if(a.acceleration.z < 0 && referenceAngle < 0){// Z < 0 is upside down
     // for the pitch tilt that is from -90 to -180 degree
-    return referenceAngle - (90+referenceAngle)*2;
+    return -referenceAngle - 180;
   }else{
     return NAN;
   }
@@ -110,10 +110,10 @@ double getRoll(){
     return referenceAngle;
   }else if(a.acceleration.z < 0 && referenceAngle > 0){// Z < 0 is upsidedown
     // for the pitch tilt from 90 to 180 degree
-    return referenceAngle + (90-referenceAngle)*2;
+    return 180 - referenceAngle;
   }else if(a.acceleration.z < 0 && referenceAngle < 0){// Z < 0 is upsidedown
     // for the pitch tilt that is from -90 to -180 degree
-    return referenceAngle - (90+referenceAngle)*2;
+    return -referenceAngle - 180;
   }else{
     return NAN;
   }
