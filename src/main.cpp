@@ -8,20 +8,24 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_Sensor.h>
 
+#define magnetSW 19
+
 Adafruit_MPU6050 mpu;
 Adafruit_SSD1306 display = Adafruit_SSD1306(128, 64, &Wire);
 
 sensors_event_t a, g, temp;
 
+int rpm = 0;
+
 /* Declared Functions */
+static void calcRPM(void*);
 double getPitch();
 double getRoll();
 /* End of Declared functions*/
 
 void setup() {
   Serial.begin(115200);
-  // while (!Serial);
-  Serial.println("MPU6050 OLED demo");
+  pinMode(magnetSW, INPUT_PULLDOWN);
 
   if (!mpu.begin()) {
     Serial.println("Sensor init failed");
@@ -41,6 +45,16 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(WHITE);
   display.setRotation(0);
+
+  // Created task to run rpm calculations in core 0 
+  xTaskCreatePinnedToCore(
+                    calcRPM, /* Function to implement the task */
+                    "task1", /* Name of the task */
+                    10000,   /* Stack size in words */
+                    NULL,    /* Task input parameter */
+                    0,       /* Priority of the task */
+                    NULL,    /* Task handle. */
+                    0);  /* Core where the task should run */
 }
 
 void loop() {
@@ -72,8 +86,28 @@ void loop() {
   display.print(getRoll());
   display.println("");
 
+  display.print("RPMs: ");
+  display.print(rpm);
+
   display.display();
   delay(100);
+}
+
+// runs in core 0 and updates rpms
+static void calcRPM(void* pvParameters){
+  bool oneShotRead = false;
+  int start = millis();
+  while(true){
+    if(digitalRead(magnetSW) && !oneShotRead){
+      oneShotRead = true;
+      rpm = rpm*.8 + 60*1000/(millis()-start)*.2;
+      start = millis();
+      delay(1);
+    }
+    if(!digitalRead(magnetSW)){
+      oneShotRead = false;
+    }
+  }
 }
 
 // Get angle from Front to Back tilt (Pitch)
