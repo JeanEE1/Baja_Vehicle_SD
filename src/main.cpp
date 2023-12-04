@@ -100,12 +100,15 @@ static void calcRPM(void* pvParameters){
   while(true){
     if(digitalRead(magnetSW) && !oneShotRead){
       oneShotRead = true;
-      rpm = rpm*.8 + 60*1000/(millis()-start)*.2;
+      rpm = rpm*.5 + 60*1000/(millis()-start)*.5;
       start = millis();
       delay(1);
     }
     if(!digitalRead(magnetSW)){
       oneShotRead = false;
+    }
+    if(millis()-start > 5000){
+      rpm = 0;
     }
   }
 }
