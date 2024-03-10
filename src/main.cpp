@@ -8,7 +8,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_Sensor.h>
 
-#define magnetSW 19
+#define MAGNET_SW_PIN 19
 
 Adafruit_MPU6050 mpu;
 Adafruit_SSD1306 display = Adafruit_SSD1306(128, 64, &Wire);
@@ -25,7 +25,7 @@ double getRoll();
 
 void setup() {
   Serial.begin(115200);
-  pinMode(magnetSW, INPUT_PULLDOWN);
+  pinMode(MAGNET_SW_PIN, INPUT_PULLDOWN);
 
   if (!mpu.begin()) {
     Serial.println("Sensor init failed");
@@ -98,13 +98,13 @@ static void calcRPM(void* pvParameters){
   bool oneShotRead = false;
   int start = millis();
   while(true){
-    if(digitalRead(magnetSW) && !oneShotRead){
+    if(digitalRead(MAGNET_SW_PIN) && !oneShotRead){
       oneShotRead = true;
       rpm = rpm*.5 + 60*1000/(millis()-start)*.5;
       start = millis();
       delay(1);
     }
-    if(!digitalRead(magnetSW)){
+    if(!digitalRead(MAGNET_SW_PIN)){
       oneShotRead = false;
     }
     if(millis()-start > 1000){
