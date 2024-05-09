@@ -8,8 +8,8 @@
 
 #define MAX_MPH 30
 
-#define MAGNET_SW_PIN 19
-#define button 13
+#define MAGNET_SW_PIN 27
+#define BUTTON 12
 
 Adafruit_MPU6050 mpu;
 Adafruit_SSD1306 display = Adafruit_SSD1306(128, 64, &Wire);
@@ -24,6 +24,7 @@ enum SCREEN {SPEED,ACCELERATION};
 
 int rpm = 0;
 int recordCount = 0; // goes however long until reading stops
+int recordSection = 0;  // counts as you hit record
 bool recordData = false;
 SCREEN displayScreen = SPEED;
 double pitchOffset = 0;
@@ -45,6 +46,7 @@ void writeDataToFile(JsonDocument, const char*);
 void setup() {
   Serial.begin(115200);
   pinMode(MAGNET_SW_PIN, INPUT_PULLUP);
+  pinMode(BUTTON, INPUT_PULLUP);
 
   if (!mpu.begin()) {
     Serial.println("Sensor init failed");
@@ -81,6 +83,8 @@ void setup() {
     while (1)
       yield();
   }
+  // SPIFFS.format();
+  
   readDataFromFile(&docData, dataStored);
   readDataFromFile(&offsetData, offsetStored);
   pitchOffset = (double)offsetData["pitch"];
@@ -88,9 +92,14 @@ void setup() {
 
   Serial.println((double)offsetData["pitch"]);
   Serial.println((double)offsetData["roll"]);
+  printFileData();
+  Serial.print(SPIFFS.usedBytes()); Serial.print("/"); Serial.print(SPIFFS.totalBytes()); Serial.println(" Bytes");
 }
 
+int num1 = millis();
+int num2 = millis();
 void loop() {
+  num1 = millis();
   /* Read values from mpu6050 Sensor */
   mpu.getEvent(&a, &g, &temp);
 
@@ -135,7 +144,7 @@ void loop() {
     display.drawChar(114,56,'3',WHITE,BLACK,1);
     display.drawChar(120,56,'0',WHITE,BLACK,1);
   }else if(displayScreen == ACCELERATION){
-    display.println("Accelerometer - m/s^2");
+    display.println("\nAccelerometer - m/s^2");
     display.print(accX, 1);
     display.print(", ");
     display.print(accY, 1);
@@ -160,14 +169,14 @@ void loop() {
   display.display();
 
   // Holding button to
-  if(touchRead(button) < 50){
+  if(!digitalRead(BUTTON)){
     Serial.println("Button Pressed!");
     int holdingButton = millis();
     while(true){
       // Hold Button < 2 Seconds
       if(millis()-holdingButton < 2000){
         //change display when Released
-        if(touchRead(button) > 50){
+        if(digitalRead(BUTTON)){
           if(displayScreen == SPEED){
             displayScreen = ACCELERATION;
           }else{
@@ -180,10 +189,11 @@ void loop() {
       // Hold Button for 2-10 Seconds
       else if(millis()-holdingButton < 10000){
         //start recording when released
-        if(touchRead(button) > 50){
+        if(digitalRead(BUTTON)){
           recordData = !recordData;
           if(recordData == false){
             recordCount = 0;
+            recordSection++;
             writeDataToFile(docData, dataStored);
             Serial.println("End Recording!");
           }else{
@@ -194,8 +204,8 @@ void loop() {
       }
       // Hold Button 10 or more Seconds
       else{
-        //zero tilt when released
-        if(touchRead(button) > 50){
+        //zeroc tilt when released
+        if(digitalRead(BUTTON)){
           // Take a Zero degree measurement
           zeroAngles();
           Serial.println("Zero degrees!");
@@ -206,6 +216,7 @@ void loop() {
   }
 
   if(recordData){
+    docData["speed"][recordCount] = getMPH(rpm);
     docData["acc"]["x"][recordCount] = accX;
     docData["acc"]["y"][recordCount] = accY;
     docData["acc"]["z"][recordCount] = accZ;
@@ -217,7 +228,11 @@ void loop() {
     recordCount++;
   }
   
-  delay(1);
+  delay(10);
+
+  num2 = millis();
+  Serial.println(num2-num1);
+
 }
 
 // runs in core 0 and updates rpms
@@ -230,6 +245,7 @@ static void calcRPM(void* pvParameters){
       oneShotRead = true;
       // smooths the result
       rpm = rpm*.2 + 60*1000/(millis()-start)*.8;
+      rpm = rpm/2.0;
       start = millis();
       delay(1);
     }
@@ -265,7 +281,7 @@ double getRoll(){
 }
 
 // Get angle from Front to Back tilt (Pitch)
-double getRawPitch(){
+double getRawRoll(){
   /* Get new sensor events with the readings */
   mpu.getEvent(&a, &g, &temp);
 
@@ -277,16 +293,16 @@ double getRawPitch(){
     return referenceAngle;
   }else if(a.acceleration.z < 0 && referenceAngle > 0){// Z < 0 is upside down
     // for the pitch tilt from 90 to 180 degree
-    return 180 - referenceAngle;
+    return referenceAngle;
   }else if(a.acceleration.z < 0 && referenceAngle < 0){// Z < 0 is upside down
     // for the pitch tilt that is from -90 to -180 degree
-    return -referenceAngle - 180;
+    return referenceAngle;
   }else{
     return NAN;
   }
 }
 // Get the angle Left to Right tilt (roll)
-double getRawRoll(){
+double getRawPitch(){
   /* Get new sensor events with the readings */
   mpu.getEvent(&a, &g, &temp);
 
@@ -298,10 +314,10 @@ double getRawRoll(){
     return referenceAngle;
   }else if(a.acceleration.z < 0 && referenceAngle > 0){// Z < 0 is upsidedown
     // for the pitch tilt from 90 to 180 degree
-    return 180 - referenceAngle;
+    return referenceAngle;
   }else if(a.acceleration.z < 0 && referenceAngle < 0){// Z < 0 is upsidedown
     // for the pitch tilt that is from -90 to -180 degree
-    return -referenceAngle - 180;
+    return referenceAngle;
   }else{
     return NAN;
   }
@@ -329,47 +345,56 @@ void readDataFromFile(JsonDocument* doc, const char* filename) {
 
 // Prints values stored in docData from memory
 void printFileData(){
-  Serial.println("Acceleration X DATA!!!!!");
-  for(int i=0; i<docData["acc"]["x"].size(); i++){
-    Serial.print((double)docData["acc"]["x"][i]);
-    Serial.print(",");
-  }
-  Serial.println("\nAcceleration Y DATA!!!!");
-  for(int i=0; i<docData["acc"]["y"].size(); i++){
-    Serial.print((double)docData["acc"]["y"][i]);
-    Serial.print(",");
-  }
-  Serial.println("\nAcceleration Z DATA!!!!");
-  for(int i=0; i<docData["acc"]["z"].size(); i++){
-    Serial.print((double)docData["acc"]["z"][i]);
-    Serial.print(",");
-  }
-  Serial.println("\nGyro X DATA!!!!!");
-  for(int i=0; i<docData["gyro"]["x"].size(); i++){
-    Serial.print((double)docData["acc"]["x"][i]);
-    Serial.print(",");
-  }
-  Serial.println("\nGyro Y DATA!!!!");
-  for(int i=0; i<docData["gyro"]["y"].size(); i++){
-    Serial.print((double)docData["acc"]["y"][i]);
-    Serial.print(",");
-  }
-  Serial.println("\nGyro Z DATA!!!!");
-  for(int i=0; i<docData["gyro"]["z"].size(); i++){
-    Serial.print((double)docData["acc"]["z"][i]);
-    Serial.print(",");
-  }
-  Serial.println("\nPitch Degree DATA!!!!");
-  for(int i=0; i<docData["pitch"].size(); i++){
-    Serial.print((double)docData["pitch"][i]);
-    Serial.print(",");
-  }
-  Serial.println("\nRoll Degree DATA!!!!");
-  for(int i=0; i<docData["roll"].size(); i++){
-    Serial.print((double)docData["roll"][i]);
-    Serial.print(",");
-  }
-  Serial.println("");
+  readDataFromFile(&docData, dataStored);
+  // for(int section=0; section<docData["acc"]["x"].size(); section++){
+    // Serial.print("Section: ");Serial.println(section+1);
+    Serial.println("Acceleration X DATA!!!!!");
+    for(int i=0; i<docData["acc"]["x"].size(); i++){
+      Serial.print((double)docData["acc"]["x"][i]);
+      Serial.print(",");
+    }
+    Serial.println("\nAcceleration Y DATA!!!!");
+    for(int i=0; i<docData["acc"]["y"].size(); i++){
+      Serial.print((double)docData["acc"]["y"][i]);
+      Serial.print(",");
+    }
+    Serial.println("\nAcceleration Z DATA!!!!");
+    for(int i=0; i<docData["acc"]["z"].size(); i++){
+      Serial.print((double)docData["acc"]["z"][i]);
+      Serial.print(",");
+    }
+    Serial.println("\nGyro X DATA!!!!!");
+    for(int i=0; i<docData["gyro"]["x"].size(); i++){
+      Serial.print((double)docData["acc"]["x"][i]);
+      Serial.print(",");
+    }
+    Serial.println("\nGyro Y DATA!!!!");
+    for(int i=0; i<docData["gyro"]["y"].size(); i++){
+      Serial.print((double)docData["acc"]["y"][i]);
+      Serial.print(",");
+    }
+    Serial.println("\nGyro Z DATA!!!!");
+    for(int i=0; i<docData["gyro"]["z"].size(); i++){
+      Serial.print((double)docData["acc"]["z"][i]);
+      Serial.print(",");
+    }
+    Serial.println("\nPitch Degree DATA!!!!");
+    for(int i=0; i<docData["pitch"].size(); i++){
+      Serial.print((double)docData["pitch"][i]);
+      Serial.print(",");
+    }
+    Serial.println("\nRoll Degree DATA!!!!");
+    for(int i=0; i<docData["roll"].size(); i++){
+      Serial.print((double)docData["roll"][i]);
+      Serial.print(",");
+    }
+    Serial.println("\nMiles per Hour DATA!!!!");
+    for(int i=0; i<docData["speed"].size(); i++){
+      Serial.print((double)docData["speed"][i]);
+      Serial.print(",");
+    }
+    Serial.println("");
+  // }
 }
 
 // saves the acceleration and rotation data during the recording time period in the memory
